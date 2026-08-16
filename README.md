@@ -80,11 +80,11 @@ under `/opt`.
 | Branch | Purpose |
 |---|---|
 | `development` | A clean mirror of `desktop/desktop:development`. Nothing fork-specific ever lands here. |
-| `linux-unstable` | All development, testing and packaging work. Releases from here are prereleases. |
-| `linux-stable` | Only versions explicitly promoted by the maintainer. Never merged into automatically. |
+| `unstable-linux` | All development, testing and packaging work. Releases from here are prereleases. |
+| `stable-linux` | Only versions explicitly promoted by the maintainer. Never merged into automatically. |
 
-Changes flow one way only: `desktop/desktop` → `development` → `linux-unstable` →
-`linux-stable`.
+Changes flow one way only: `desktop/desktop` → `development` → `unstable-linux` →
+`stable-linux`.
 
 ## Testing
 
@@ -99,7 +99,7 @@ Bugs in the *application* belong upstream at
 application behaviour, so it cannot fix them. Report packaging, build and Linux integration
 problems here.
 
-Pull requests target `linux-unstable`, never `development` or `linux-stable`.
+Pull requests target `unstable-linux`, never `development` or `stable-linux`.
 
 ## License
 

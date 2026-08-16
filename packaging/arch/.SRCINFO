@@ -25,7 +25,7 @@ pkgbase = github-desktop-archtop
 	optdepends = qt5-tools: protocol registration under KDE (xdg-mime calls qtpaths; qt6-tools only ships qtpaths6)
 	options = !strip
 	options = !debug
-	source = github-desktop-archtop::git+https://github.com/JamJan05/Archtop.git#branch=linux-unstable
+	source = github-desktop-archtop::git+https://github.com/JamJan05/Archtop.git#branch=unstable-linux
 	sha256sums = SKIP
 
 pkgname = github-desktop-archtop

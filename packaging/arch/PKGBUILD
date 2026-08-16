@@ -8,7 +8,7 @@
 
 # Branch or tag of the fork to build from. Point this at a tag once releases
 # are cut; a branch name is only appropriate for development builds.
-_gitbranch=linux-unstable
+_gitbranch=unstable-linux
 
 pkgname=github-desktop-archtop
 # Upstream version is 3.6.5-beta1; pacman does not allow '-' inside pkgver, so

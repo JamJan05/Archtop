@@ -6,12 +6,12 @@ name: Arch Linux
 on:
   push:
     branches:
-      - linux-unstable
-      - linux-stable
+      - unstable-linux
+      - stable-linux
   pull_request:
     branches:
-      - linux-unstable
-      - linux-stable
+      - unstable-linux
+      - stable-linux
   workflow_dispatch:
 
 jobs:
