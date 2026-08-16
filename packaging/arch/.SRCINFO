@@ -2,7 +2,7 @@ pkgbase = github-desktop-archtop
 	pkgdesc = GitHub Desktop packaged natively for Arch Linux
 	pkgver = 3.6.5_beta1
 	pkgrel = 1
-	url = https://github.com/JamJan05/Github-archtop
+	url = https://github.com/JamJan05/Archtop
 	install = github-desktop-archtop.install
 	arch = x86_64
 	license = MIT
@@ -25,7 +25,7 @@ pkgbase = github-desktop-archtop
 	optdepends = qt5-tools: protocol registration under KDE (xdg-mime calls qtpaths; qt6-tools only ships qtpaths6)
 	options = !strip
 	options = !debug
-	source = github-desktop-archtop::git+https://github.com/JamJan05/Github-archtop.git#branch=linux-unstable
+	source = github-desktop-archtop::git+https://github.com/JamJan05/Archtop.git#branch=linux-unstable
 	sha256sums = SKIP
 
 pkgname = github-desktop-archtop

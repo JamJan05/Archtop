@@ -18,7 +18,7 @@ pkgver=3.6.5_beta1
 pkgrel=1
 pkgdesc='GitHub Desktop packaged natively for Arch Linux'
 arch=('x86_64')
-url='https://github.com/JamJan05/Github-archtop'
+url='https://github.com/JamJan05/Archtop'
 license=('MIT')
 # Verified against the built binary, not copied from another package:
 #   alsa-lib, gtk3, nss  -> NEEDED entries of dist/desktop-linux-x64/desktop
