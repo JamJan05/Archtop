@@ -50,6 +50,7 @@ optdepends=(
   'openssh: cloning and pushing over SSH'
   'gnupg: GPG commit signing'
   'xdg-utils: registering the x-github-* protocol handlers'
+  'qt5-tools: protocol registration under KDE (xdg-mime calls qtpaths; qt6-tools only ships qtpaths6)'
 )
 # Electron ships prebuilt binaries; stripping them breaks the bundled V8
 # snapshots and the debug package would only contain upstream-provided symbols.

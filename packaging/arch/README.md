@@ -105,6 +105,32 @@ There is no in-app updater on Linux. Upstream already disables it there, and a
 pacman-managed application must not rewrite files under `/opt`. Updates arrive as new
 package versions.
 
+## Protocol registration under KDE
+
+`app.setAsDefaultProtocolClient` shells out to `xdg-mime`, and on a KDE session
+`xdg-mime` calls `qtpaths`. Arch's `qt6-tools` installs `qtpaths6`, not `qtpaths` — so on
+a Plasma desktop without `qt5-tools` the registration fails with:
+
+```text
+/usr/bin/xdg-mime: line 885: qtpaths: command not found
+xdg-mime: application argument missing
+```
+
+The app still runs; only the deep-link handler registration is lost. Install `qt5-tools`
+if `xdg-mime query default x-scheme-handler/x-github-desktop-auth` comes back empty.
+
+## ELECTRON_RUN_AS_NODE
+
+When that variable is set, the Electron binary starts as a plain Node process: it exits 0
+immediately and never opens a window. Terminals hosted inside Electron applications (VS
+Code and its derivatives) export it, so running the app from such a terminal appears to do
+nothing at all. The installed launcher unsets it; if you run the binary out of `dist/`
+directly, clear it yourself:
+
+```bash
+env -u ELECTRON_RUN_AS_NODE ./dist/desktop-linux-x64/desktop
+```
+
 ## Wayland
 
 The launcher does not force an Ozone backend, so the app runs under XWayland by default.

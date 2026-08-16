@@ -22,6 +22,7 @@ pkgbase = github-desktop-archtop
 	optdepends = openssh: cloning and pushing over SSH
 	optdepends = gnupg: GPG commit signing
 	optdepends = xdg-utils: registering the x-github-* protocol handlers
+	optdepends = qt5-tools: protocol registration under KDE (xdg-mime calls qtpaths; qt6-tools only ships qtpaths6)
 	options = !strip
 	options = !debug
 	source = github-desktop-archtop::git+https://github.com/JamJan05/Github-archtop.git#branch=linux-unstable
