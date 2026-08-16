@@ -1,0 +1,30 @@
+pkgbase = github-desktop-archtop
+	pkgdesc = GitHub Desktop packaged natively for Arch Linux
+	pkgver = 3.6.5_beta1
+	pkgrel = 1
+	url = https://github.com/JamJan05/Github-archtop
+	install = github-desktop-archtop.install
+	arch = x86_64
+	license = MIT
+	makedepends = base-devel
+	makedepends = git
+	makedepends = nodejs-lts-krypton
+	makedepends = python
+	makedepends = yarn
+	depends = alsa-lib
+	depends = git
+	depends = gtk3
+	depends = libnotify
+	depends = libsecret
+	depends = nss
+	optdepends = gnome-keyring: Secret Service provider for storing GitHub tokens
+	optdepends = kwallet: Secret Service provider for storing GitHub tokens (KDE)
+	optdepends = openssh: cloning and pushing over SSH
+	optdepends = gnupg: GPG commit signing
+	optdepends = xdg-utils: registering the x-github-* protocol handlers
+	options = !strip
+	options = !debug
+	source = github-desktop-archtop::git+https://github.com/JamJan05/Github-archtop.git#branch=linux-unstable
+	sha256sums = SKIP
+
+pkgname = github-desktop-archtop

@@ -1,0 +1,23 @@
+post_install() {
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+
+  cat <<'EOF'
+==> Archtop stores GitHub tokens in the system keyring via libsecret.
+    Install and run a Secret Service provider (gnome-keyring or kwallet)
+    before signing in, otherwise authentication cannot be persisted.
+
+==> Updates are delivered as new packages. The in-app auto-updater is
+    inactive on Linux by design.
+EOF
+}
+
+post_upgrade() {
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+}
+
+post_remove() {
+  update-desktop-database -q /usr/share/applications 2>/dev/null || true
+  gtk-update-icon-cache -q -t -f /usr/share/icons/hicolor 2>/dev/null || true
+}

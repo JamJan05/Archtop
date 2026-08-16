@@ -40,6 +40,8 @@ if (process.platform === 'darwin') {
   packageOSX()
 } else if (process.platform === 'win32') {
   packageWindows()
+} else if (process.platform === 'linux') {
+  packageLinux()
 } else {
   console.error(`I don't know how to package for ${process.platform} :(`)
   process.exit(1)
@@ -67,6 +69,31 @@ function packageOSX() {
   cp.execSync(
     `ditto -ck --keepParent "${distPath}/${productName}.app" "${dest}"`
   )
+}
+
+/**
+ * Linux distributions build their own packages from this tree, so all we
+ * produce here is a plain tarball of the packaged app directory. The Arch
+ * PKGBUILD in packaging/arch consumes the same directory directly.
+ */
+function packageLinux() {
+  assertExistsSync(distPath)
+
+  const dest = path.join(
+    outputDir,
+    `github-desktop-archtop-${getVersion()}-${getDistArchitecture()}.tar.gz`
+  )
+
+  rmSync(dest, { force: true })
+
+  console.log('Packaging for Linux…')
+  cp.execSync(
+    `tar -czf "${dest}" -C "${path.dirname(distPath)}" "${path.basename(
+      distPath
+    )}"`
+  )
+
+  console.log(`Archive created at ${dest}`)
 }
 
 function packageWindows() {

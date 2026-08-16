@@ -1,0 +1,13 @@
+[Desktop Entry]
+Type=Application
+Version=1.0
+Name=GitHub Desktop (Archtop)
+GenericName=Git Client
+Comment=Simple collaboration from your desktop
+Exec=/usr/bin/github-desktop-archtop %U
+Icon=github-desktop-archtop
+Terminal=false
+Categories=Development;RevisionControl;
+MimeType=x-scheme-handler/x-github-client;x-scheme-handler/x-github-desktop-auth;x-scheme-handler/x-github-desktop-dev-auth;
+StartupNotify=true
+StartupWMClass=GitHub Desktop

@@ -1,0 +1,118 @@
+# Maintainer: JamJan05 <janek2ko@gmail.com>
+#
+# Archtop — GitHub Desktop packaged natively for Arch Linux.
+#
+# This builds the unmodified upstream application from source. The only
+# deviation from desktop/desktop is a thin platform layer that lets the build
+# scripts target Linux; see ../../packaging/arch/PORTED-PATCHES.md.
+
+# Branch or tag of the fork to build from. Point this at a tag once releases
+# are cut; a branch name is only appropriate for development builds.
+_gitbranch=linux-unstable
+
+pkgname=github-desktop-archtop
+# Upstream version is 3.6.5-beta1; pacman does not allow '-' inside pkgver, so
+# the prerelease suffix is joined with '_'. See README.md for the epoch caveat
+# when 3.6.5 final is packaged.
+pkgver=3.6.5_beta1
+pkgrel=1
+pkgdesc='GitHub Desktop packaged natively for Arch Linux'
+arch=('x86_64')
+url='https://github.com/JamJan05/Github-archtop'
+license=('MIT')
+# Verified against the built binary, not copied from another package:
+#   alsa-lib, gtk3, nss  -> NEEDED entries of dist/desktop-linux-x64/desktop
+#   libsecret            -> NEEDED entry of resources/app/keytar.node
+#   libnotify            -> dlopen'd by Electron (libnotify.so.4/.so.5)
+#   git                  -> runtime, invoked as a subprocess
+# Everything else objdump reports is reached transitively through gtk3 and nss.
+# libxss is deliberately absent: Electron 42 no longer references libXss.
+depends=(
+  'alsa-lib'
+  'git'
+  'gtk3'
+  'libnotify'
+  'libsecret'
+  'nss'
+)
+makedepends=(
+  'base-devel'
+  'git'
+  # Node 24, matching .nvmrc and .github/workflows/ci.yml. NOT plain 'nodejs':
+  # see the version check in build() and the README for why 26 cannot build this.
+  'nodejs-lts-krypton'
+  'python'
+  'yarn'
+)
+optdepends=(
+  'gnome-keyring: Secret Service provider for storing GitHub tokens'
+  'kwallet: Secret Service provider for storing GitHub tokens (KDE)'
+  'openssh: cloning and pushing over SSH'
+  'gnupg: GPG commit signing'
+  'xdg-utils: registering the x-github-* protocol handlers'
+)
+# Electron ships prebuilt binaries; stripping them breaks the bundled V8
+# snapshots and the debug package would only contain upstream-provided symbols.
+options=('!strip' '!debug')
+install="$pkgname.install"
+source=("$pkgname::git+$url.git#branch=$_gitbranch")
+sha256sums=('SKIP')
+
+build() {
+  cd "$pkgname"
+
+  # Node 26 breaks extract-zip/yauzl: it stops after the first zip entry and
+  # raises nothing. Both electron's postinstall and @electron/packager then
+  # produce an app directory holding a single locales/et.pak, and still exit 0 —
+  # so without this check makepkg would happily package an empty application.
+  local _nodemajor
+  _nodemajor=$(node -p 'process.versions.node.split(".")[0]')
+  if (( _nodemajor > 24 )); then
+    echo "Node $_nodemajor cannot build this package; install nodejs-lts-krypton (24.x)." >&2
+    return 1
+  fi
+
+  # NOTE: this step requires network access. yarn resolves the dependency tree,
+  # downloads the Electron binary and compiles the native modules (keytar needs
+  # libsecret headers). A fully offline build() is not achievable here; this is
+  # documented as a known limitation in README.md.
+  yarn install --frozen-lockfile
+
+  yarn build:prod
+}
+
+package() {
+  cd "$pkgname"
+
+  local _distarch
+  case "$CARCH" in
+    x86_64) _distarch=x64 ;;
+    aarch64) _distarch=arm64 ;;
+    *) echo "unsupported CARCH: $CARCH" >&2; return 1 ;;
+  esac
+
+  local _dist="dist/desktop-linux-$_distarch"
+  [[ -d $_dist ]] || { echo "missing build output at $_dist" >&2; return 1; }
+
+  # The upstream executable keeps its own name ('desktop'); /usr/bin holds a
+  # thin launcher rather than a second copy of the application.
+  install -dm755 "$pkgdir/opt/$pkgname"
+  cp -a "$_dist/." "$pkgdir/opt/$pkgname/"
+
+  install -Dm755 "packaging/arch/$pkgname.sh" "$pkgdir/usr/bin/$pkgname"
+
+  install -Dm644 "packaging/arch/$pkgname.desktop" \
+    "$pkgdir/usr/share/applications/$pkgname.desktop"
+
+  install -Dm644 app/static/linux/icon-logo.png \
+    "$pkgdir/usr/share/icons/hicolor/512x512/apps/$pkgname.png"
+
+  install -Dm644 LICENSE "$pkgdir/usr/share/licenses/$pkgname/LICENSE"
+
+  # Electron's setuid sandbox helper is deliberately left non-setuid: Arch
+  # enables unprivileged user namespaces, so Chromium uses the namespace
+  # sandbox instead. Do not add --no-sandbox to work around this.
+  if [[ -f $pkgdir/opt/$pkgname/chrome-sandbox ]]; then
+    chmod 755 "$pkgdir/opt/$pkgname/chrome-sandbox"
+  fi
+}

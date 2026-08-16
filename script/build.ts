@@ -171,11 +171,28 @@ function packageApp() {
   }
 
   const iconPath = getIconDirectory()
-  const assetsCarPath = join(iconPath, 'Assets.car')
-  assert(
-    existsSync(assetsCarPath),
-    `Unable to find Assets.car at ${assetsCarPath}`
-  )
+
+  // Assets.car is compiled by actool and is only consumed by macOS. Requiring
+  // it on other platforms would block the build for no reason.
+  const assetsCarPath =
+    process.platform === 'darwin' ? join(iconPath, 'Assets.car') : undefined
+
+  if (assetsCarPath !== undefined) {
+    assert(
+      existsSync(assetsCarPath),
+      `Unable to find Assets.car at ${assetsCarPath}`
+    )
+  }
+
+  // The icon directory only holds macOS (.icns/.icon) and Windows (.ico)
+  // assets, so Linux picks up the PNG that ships in app/static/linux instead.
+  const packagerIconPath =
+    process.platform === 'linux'
+      ? join(projectRoot, 'app', 'static', 'linux', 'icon-logo.png')
+      : join(
+          iconPath,
+          process.platform === 'darwin' ? 'icon-logo-legacy.icns' : 'icon-logo'
+        )
 
   return packager({
     name: getExecutableName(),
@@ -185,11 +202,8 @@ function packageApp() {
     out: getDistRoot(),
     // Packager probes for a sibling .icon file and requires macOS 26 to compile
     // it. Use a distinct basename so older build hosts use the prebuilt ICNS.
-    icon: join(
-      iconPath,
-      process.platform === 'darwin' ? 'icon-logo-legacy.icns' : 'icon-logo'
-    ),
-    extraResource: [assetsCarPath],
+    icon: packagerIconPath,
+    extraResource: assetsCarPath === undefined ? [] : [assetsCarPath],
     dir: outRoot,
     overwrite: true,
     tmpdir: false,
@@ -207,20 +221,23 @@ function packageApp() {
     appBundleId: getBundleID(),
     appCategoryType: 'public.app-category.developer-tools',
     darwinDarkModeSupport: true,
-    osxSign: {
-      optionsForFile: (path: string) => ({
-        hardenedRuntime: true,
-        entitlements: entitlementsPath,
-      }),
-      type: isPublishableBuild ? 'distribution' : 'development',
-      // For development, we will use '-' as the identifier so that codesign
-      // will sign the app to run locally. We need to disable 'identity-validation'
-      // or otherwise it will replace '-' with one of the regular codesigning
-      // identities in our system.
-      identity: isDevelopmentBuild ? '-' : undefined,
-      identityValidation: !isDevelopmentBuild,
-    },
-    osxNotarize,
+    osxSign:
+      process.platform === 'darwin'
+        ? {
+            optionsForFile: (path: string) => ({
+              hardenedRuntime: true,
+              entitlements: entitlementsPath,
+            }),
+            type: isPublishableBuild ? 'distribution' : 'development',
+            // For development, we will use '-' as the identifier so that codesign
+            // will sign the app to run locally. We need to disable 'identity-validation'
+            // or otherwise it will replace '-' with one of the regular codesigning
+            // identities in our system.
+            identity: isDevelopmentBuild ? '-' : undefined,
+            identityValidation: !isDevelopmentBuild,
+          }
+        : undefined,
+    osxNotarize: process.platform === 'darwin' ? osxNotarize : undefined,
     protocols: [
       {
         name: getBundleID(),
@@ -233,16 +250,19 @@ function packageApp() {
         ],
       },
     ],
-    extendInfo: extendInfoPath,
+    extendInfo: process.platform === 'darwin' ? extendInfoPath : undefined,
 
     // Windows
-    win32metadata: {
-      CompanyName: getCompanyName(),
-      FileDescription: '',
-      OriginalFilename: '',
-      ProductName: getProductName(),
-      InternalName: getProductName(),
-    },
+    win32metadata:
+      process.platform === 'win32'
+        ? {
+            CompanyName: getCompanyName(),
+            FileDescription: '',
+            OriginalFilename: '',
+            ProductName: getProductName(),
+            InternalName: getProductName(),
+          }
+        : undefined,
   })
 }
 
