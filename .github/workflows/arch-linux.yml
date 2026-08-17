@@ -138,10 +138,46 @@ jobs:
       - name: Package
         run: su builder -c 'yarn package'
 
+      # Unprivileged user namespaces are unavailable inside the container, so
+      # Chromium falls back to the setuid sandbox — and aborts, because the
+      # packaged chrome-sandbox is mode 755 by design. Granting setuid *here*
+      # only affects this throwaway dist/ tree, never the package: package()
+      # still installs it 755, and on a real Arch system the namespace sandbox
+      # is used instead. This is the supported way to run out of a build
+      # directory, and it is not --no-sandbox — the sandbox stays on.
       - name: Smoke test the packaged binary
         run: |
-          su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version' \
-            || echo '::warning::packaged binary did not report a version'
+          chown root:root dist/desktop-linux-x64/chrome-sandbox
+          chmod 4755 dist/desktop-linux-x64/chrome-sandbox
+          su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version'
+
+      # The dependency list is derived from these NEEDED entries, so an
+      # unresolved one means depends= is missing something. The container has
+      # exactly the depends= array installed and nothing else, which makes this
+      # a real check rather than a formality.
+      - name: Check the runtime dependencies resolve
+        run: |
+          missing=$(ldd dist/desktop-linux-x64/desktop | grep 'not found' || true)
+          if [ -n "$missing" ]; then
+            echo "$missing"
+            echo '::error::depends= does not cover every shared library the binary needs'
+            exit 1
+          fi
+          echo 'every NEEDED entry of the main binary resolves'
+
+      # A branch pin in source= is how the stable branch ended up packaging
+      # unstable code: stable-linux is the merge of unstable-linux, so the line
+      # travelled with the merge and nobody noticed it was now wrong. The
+      # release tag decides what gets built, so the pin has no job to do, and
+      # this runs on every branch and every pull request — the point is to catch
+      # it before a merge, not to repair it afterwards.
+      - name: Reject a branch pin in the PKGBUILD source
+        run: |
+          if grep -nE '^source=.*#(branch|tag)=' packaging/arch/PKGBUILD; then
+            echo '::error file=packaging/arch/PKGBUILD::source= pins a git ref; the newest release tag decides what is built, and a pin goes stale the moment it is merged to another branch'
+            exit 1
+          fi
+          echo 'source= pins no ref'
 
       - name: Check the PKGBUILD
         run: |
