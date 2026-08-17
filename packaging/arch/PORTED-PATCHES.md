@@ -23,6 +23,8 @@ necessary when upstream changes.
 | 5 | `script/package.ts` | own work | `yarn package` exited 1 with `I don't know how to package for linux :(` | added `packageLinux()`, which tars the packaged directory; no other branch touched | upstream adds Linux packaging |
 | 6 | `packaging/arch/PKGBUILD` | own work | On Node 26, `extract-zip`/`yauzl` stops after the first zip entry and raises nothing, so Electron's postinstall *and* `@electron/packager` both produce an app directory holding one `locales/et.pak` and exit 0 — `makepkg` would package an empty application | `makedepends` names `nodejs-lts-krypton`; `build()` refuses to run on Node > 24 | `extract-zip`/`yauzl` is fixed or upstream drops it |
 | 7 | `packaging/arch/PKGBUILD` | own work | `libxss` was in the initial dependency list, carried over from AUR `github-desktop-bin` | removed; Electron 42 has no reference to libXss (verified with `objdump -p` and `strings`) | never — re-verify with `objdump` on each Electron bump |
+| 8 | `packaging/arch/PKGBUILD` | own work | `makepkg.conf` exports `-Wp,-D_FORTIFY_SOURCE=3` while `printenvz` and `process-proxy` pin `-D_FORTIFY_SOURCE=1` with `-Werror` in their own `binding.gyp`; node-gyp fails on the redefinition, but only under `makepkg` | `build()` strips the makepkg-supplied `_FORTIFY_SOURCE` from `CFLAGS`/`CXXFLAGS`/`CPPFLAGS` | the vendored helpers stop pinning a fortify level, or stop using `-Werror` |
+| 9 | `packaging/arch/github-desktop-archtop.sh` | own work | `ELECTRON_RUN_AS_NODE` makes the Electron binary start as plain Node: exits 0, no window. Terminals inside Electron apps (VS Code) export it | launcher unsets it before `exec` | never — this is a property of Electron, not of this build |
 
 ## Not ported, deliberately
 

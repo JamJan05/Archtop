@@ -1,0 +1,9 @@
+# makepkg working directories and output. makepkg runs in place, so without
+# this every build would leave a full source clone and an unpacked node_modules
+# tree showing up as untracked changes in the repository.
+/src/
+/pkg/
+/github-desktop-archtop/
+/*.pkg.tar.zst
+/*.pkg.tar.zst.sig
+/*.log

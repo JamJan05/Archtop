@@ -73,6 +73,16 @@ build() {
     return 1
   fi
 
+  # makepkg.conf hardens builds with -Wp,-D_FORTIFY_SOURCE=3, but the bundled
+  # native helpers (printenvz, process-proxy) pin -D_FORTIFY_SOURCE=1 in their
+  # own binding.gyp and compile with -Werror. GCC reports the redefinition and
+  # -Werror turns it fatal, so node-gyp fails only under makepkg — a plain
+  # `yarn install` never sets the flag. Drop the makepkg-supplied value and let
+  # each module keep the level it was written against.
+  export CFLAGS="${CFLAGS//-Wp,-D_FORTIFY_SOURCE=[0-9]/}"
+  export CXXFLAGS="${CXXFLAGS//-Wp,-D_FORTIFY_SOURCE=[0-9]/}"
+  export CPPFLAGS="${CPPFLAGS//-Wp,-D_FORTIFY_SOURCE=[0-9]/}"
+
   # NOTE: this step requires network access. yarn resolves the dependency tree,
   # downloads the Electron binary and compiles the native modules (keytar needs
   # libsecret headers). A fully offline build() is not achievable here; this is
