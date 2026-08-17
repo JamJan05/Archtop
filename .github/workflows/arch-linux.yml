@@ -167,7 +167,16 @@ jobs:
       # chrome-sandbox 755, and Arch uses the namespace sandbox, which needs
       # none of this. The sandbox stays on throughout — this is not
       # --no-sandbox.
+      #
+      # The pass condition is survival, not output. `--version` was tried and
+      # hung the job for 45 minutes: the app has no such flag, so it opened a
+      # window and kept running, which is the behaviour we wanted all along.
+      # Staying up under a working sandbox is a stronger check than printing a
+      # string anyway — it means the zygote forked, the renderer started and
+      # nothing aborted. timeout exits 124 when it has to stop the app itself,
+      # so 124 is the success case and anything else is an early death.
       - name: Smoke test the packaged binary
+        timeout-minutes: 3
         run: |
           echo "— can builder create namespaces unaided?"
           su builder -c 'unshare --user --pid true' \
@@ -176,7 +185,18 @@ jobs:
 
           chown root:root dist/desktop-linux-x64/chrome-sandbox
           chmod 4755 dist/desktop-linux-x64/chrome-sandbox
-          su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version'
+
+          set +e
+          su builder -c 'timeout -s TERM 25 xvfb-run -a ./dist/desktop-linux-x64/desktop'
+          status=$?
+          set -e
+
+          if [ "$status" -eq 124 ]; then
+            echo 'packaged binary ran for 25s under a working sandbox'
+          else
+            echo "::error::packaged binary exited early with status $status"
+            exit 1
+          fi
 
       # The dependency list is derived from these NEEDED entries, so an
       # unresolved one means depends= is missing something. The container has
