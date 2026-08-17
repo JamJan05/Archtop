@@ -23,12 +23,8 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm --needed \
-            git python yarn xorg-server-xvfb namcap \
+            nodejs git python yarn xorg-server-xvfb namcap \
             gtk3 nss alsa-lib libnotify libsecret
-          # Node 24, not Arch's current nodejs: on 26 extract-zip stops after the
-          # first zip entry without raising, so Electron unpacks to a single file
-          # and the build "succeeds" with an empty app. See packaging/arch/README.md.
-          pacman -S --noconfirm --needed nodejs-lts-krypton
 
       - uses: actions/checkout@v7
         with:
