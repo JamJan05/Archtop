@@ -67,24 +67,42 @@ jobs:
       - name: Hand the tree and the cache to the build user
         run: chown -R builder:builder "$GITHUB_WORKSPACE" /home/builder
 
-      # A healthy install is ~2 minutes. This cap is generous enough to absorb a
-      # cold cache and a slow network, and still turns the postinstall hang into
-      # a fast, legible failure rather than a 45 minute one.
-      # PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT is set inside the quotes, not in a
-      # job-level `env:` block, because `su` clears the environment — that is
-      # what its --preserve-environment flag exists to switch off. Anything this
-      # workflow exports outside these quotes never reaches the command.
+      # Records what the container can actually reach. Two attempts to time the
+      # Playwright download out have failed, so this establishes whether the CDN
+      # is reachable at all before the next theory gets built on top. Never
+      # fails the job — it exists to be read.
+      - name: Probe the Playwright CDN
+        continue-on-error: true
+        run: |
+          echo "— DNS"
+          getent hosts cdn.playwright.dev || echo "  resolution failed"
+          echo "— HTTPS (20s cap)"
+          curl -sS -m 20 -o /dev/null -w '  status %{http_code} in %{time_total}s\n' \
+            https://cdn.playwright.dev/ || echo "  request failed with $?"
+
+      # A healthy install is ~2 minutes. The cap turns a wedged postinstall into
+      # a legible failure instead of a 45 minute one.
       #
       # post-install.ts ends by running `playwright install ffmpeg` through
       # spawnSync with captured stdio, so a stalled download blocks forever and
-      # prints nothing. It already treats a failed install as non-fatal, so the
-      # only thing missing is for the download to give up. ffmpeg records video
-      # for the Playwright e2e suite, which this workflow never runs.
+      # prints nothing at all. It already treats a failed install as non-fatal,
+      # so the download only has to give up rather than succeed — ffmpeg records
+      # video for the Playwright e2e suite, which this workflow never runs.
+      #
+      # PLAYWRIGHT_DOWNLOAD_HOST points at the discard port on loopback, so the
+      # connection is refused immediately. A connection timeout was tried first
+      # and did not help: it caps the socket, which never helps if the stall is
+      # in DNS or in a black-holed connect. Refusal needs no timeout to work.
+      #
+      # Both variables sit inside the quotes because su clears the environment —
+      # that is what its --preserve-environment flag exists to switch off. A
+      # job-level `env:` block is silently inert for every step here.
       - name: Install dependencies
         timeout-minutes: 15
         run: >-
-          su builder -c 'PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=60000 yarn
-          install --frozen-lockfile'
+          su builder -c 'PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:9
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=60000 yarn install
+          --frozen-lockfile'
 
       # The yauzl bug does not fail loudly: it leaves an Electron directory
       # holding a single locale file and reports success. Check the extraction
