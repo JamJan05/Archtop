@@ -35,20 +35,21 @@ sudo pacman -U ./*.pkg.tar.zst
 
 `makepkg -s` installs the `makedepends` for you. Do not run it as root.
 
-### Node 24 is required, and it is not Arch's `nodejs`
+### Why package.json pins yauzl 3
 
-`makedepends` names `nodejs-lts-krypton` (24.x), not `nodejs`. That package *provides*
-`nodejs`, so pacman will offer to replace a `nodejs` 26 install; if you need 26 for other
-work, build in a clean chroot (`extra-x86_64-build`) instead of swapping your system Node.
+On Node 26, `yauzl` 2.10 — the version `extract-zip` depends on — stops after the **first**
+entry of a zip archive. It emits no error and never settles its promise, so the process
+simply runs out of work and exits 0. Electron's postinstall and `@electron/packager` both
+extract through it, so both produced an application directory holding a single file,
+`locales/et.pak`, while reporting success. The build "passed" and the package launched
+nothing.
 
-This is not a stylistic preference. On Node 26, `extract-zip` (through `yauzl`) stops after
-the **first** entry of a zip archive and reports no error. Electron's postinstall and
-`@electron/packager` both use it, so both produce an application directory containing one
-file — `locales/et.pak` — and exit successfully. The result is a package that installs
-cleanly and launches nothing.
+`yauzl` 3.4.0 handles the same archive correctly (74/74 entries), so the root `package.json`
+carries a `resolutions` entry pinning it. `extract-zip` is its only consumer, and it runs at
+build time only — the shipped application is unaffected.
 
-`build()` checks the major version and fails loudly rather than shipping that. The version
-matches `.nvmrc` and `.github/workflows/ci.yml`.
+This is why `makedepends` can name plain `nodejs`: the package builds on current Arch
+without displacing anyone's system Node.
 
 The PKGBUILD clones the branch named in `_gitbranch` at the top of the file. Point it at
 a tag for anything you intend to keep.

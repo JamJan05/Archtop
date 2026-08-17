@@ -17,3 +17,7 @@ gemoji
 *.md
 app/static/logos/prod/**/*.json
 app/static/logos/dev/**/*.json
+# makepkg working directories (see packaging/arch/.gitignore)
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/github-desktop-archtop/

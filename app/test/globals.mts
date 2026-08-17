@@ -40,6 +40,18 @@ Object.assign(globalThis, {
   BroadcastChannel: undefined,
 })
 
+// Node 26 ships its own `localStorage` global, gated behind --localstorage-file.
+// It takes precedence over the one global-jsdom installs, so every read through
+// the bare global throws instead of reaching jsdom's implementation — several
+// hundred tests fail with "Cannot read properties of undefined". Point the
+// global at jsdom's copy explicitly; assignment alone is not enough because
+// Node defines it as an accessor.
+Object.defineProperty(globalThis, 'localStorage', {
+  value: window.localStorage,
+  configurable: true,
+  writable: true,
+})
+
 mock.module('electron', {
   namedExports: {
     clipboard: { writeText: () => {} },

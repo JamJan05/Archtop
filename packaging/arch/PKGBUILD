@@ -38,9 +38,7 @@ depends=(
 makedepends=(
   'base-devel'
   'git'
-  # Node 24, matching .nvmrc and .github/workflows/ci.yml. NOT plain 'nodejs':
-  # see the version check in build() and the README for why 26 cannot build this.
-  'nodejs-lts-krypton'
+  'nodejs'
   'python'
   'yarn'
 )
@@ -61,17 +59,6 @@ sha256sums=('SKIP')
 
 build() {
   cd "$pkgname"
-
-  # Node 26 breaks extract-zip/yauzl: it stops after the first zip entry and
-  # raises nothing. Both electron's postinstall and @electron/packager then
-  # produce an app directory holding a single locales/et.pak, and still exit 0 —
-  # so without this check makepkg would happily package an empty application.
-  local _nodemajor
-  _nodemajor=$(node -p 'process.versions.node.split(".")[0]')
-  if (( _nodemajor > 24 )); then
-    echo "Node $_nodemajor cannot build this package; install nodejs-lts-krypton (24.x)." >&2
-    return 1
-  fi
 
   # makepkg.conf hardens builds with -Wp,-D_FORTIFY_SOURCE=3, but the bundled
   # native helpers (printenvz, process-proxy) pin -D_FORTIFY_SOURCE=1 in their
