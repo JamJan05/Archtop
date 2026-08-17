@@ -14,40 +14,138 @@ on:
       - stable-linux
   workflow_dispatch:
 
+# A second push to the same branch makes the run in flight pointless. Without
+# this they queue behind each other, and this job is long enough that the queue
+# becomes the bottleneck.
+concurrency:
+  group: arch-linux-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build and package
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    container:
+      image: archlinux:base-devel
+      # Chromium's sandbox has to create user, PID and network namespaces.
+      # Docker's default seccomp profile denies clone(CLONE_NEWUSER) and the
+      # default AppArmor profile denies namespace creation outright, so the
+      # sandbox cannot initialise and the packaged binary aborts before it
+      # prints anything — on a real Arch system it starts fine, because
+      # unprivileged user namespaces are enabled there.
+      #
+      # This grants the *container* what an ordinary desktop already allows. It
+      # is the opposite of --no-sandbox: the application's own sandbox stays on
+      # and gets exercised exactly as the package ships it. SYS_ADMIN covers the
+      # setuid helper's path too, in case the namespace path is unavailable.
+      options: >-
+        --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+        --cap-add SYS_ADMIN
+    # This build has a hang-shaped failure mode: the postinstall chain sits on
+    # `playwright install ffmpeg`, whose output post-install.ts captures rather
+    # than inherits, so a wedged run prints nothing at all. Unbounded, the job
+    # would burn the six hour default before anyone noticed.
+    timeout-minutes: 45
     steps:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm --needed \
-            git python yarn xorg-server-xvfb namcap \
+            nodejs npm git python yarn xorg-server-xvfb namcap \
             gtk3 nss alsa-lib libnotify libsecret
-          # Node 24, not Arch's current nodejs: on 26 extract-zip stops after the
-          # first zip entry without raising, so Electron unpacks to a single file
-          # and the build "succeeds" with an empty app. See packaging/arch/README.md.
-          pacman -S --noconfirm --needed nodejs-lts-krypton
+
+      # makepkg refuses to run as root, and the container's default user is
+      # root. Created before the cache is restored so that the tree and the
+      # cache can be handed over in a single chown.
+      - name: Create build user
+        run: useradd -m builder
 
       - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      # makepkg refuses to run as root, and the container's default user is root.
-      - name: Create build user
-        run: |
-          useradd -m builder
-          chown -R builder:builder "$GITHUB_WORKSPACE"
+      # Downloads only: package tarballs, the Electron binary, node-gyp headers.
+      # Deliberately *not* node_modules — a healthy install here runs about two
+      # minutes end to end, of which native compilation is well under a minute,
+      # so caching the compiled tree buys little and risks restoring modules
+      # built against an ABI the container's rolling nodejs no longer has.
+      - name: Restore download caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            /home/builder/.cache
+            /home/builder/.node-gyp
+            /home/builder/.electron-gyp
+          key: archtop-dl-${{ hashFiles('yarn.lock', 'app/yarn.lock') }}
+          restore-keys: |
+            archtop-dl-
 
+      - name: Hand the tree and the cache to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE" /home/builder
+
+      # Records what the container can actually reach. Two attempts to time the
+      # Playwright download out have failed, so this establishes whether the CDN
+      # is reachable at all before the next theory gets built on top. Never
+      # fails the job — it exists to be read.
+      - name: Probe the Playwright CDN
+        continue-on-error: true
+        run: |
+          echo "— DNS"
+          getent hosts cdn.playwright.dev || echo "  resolution failed"
+          echo "— HTTPS (20s cap)"
+          curl -sS -m 20 -o /dev/null -w '  status %{http_code} in %{time_total}s\n' \
+            https://cdn.playwright.dev/ || echo "  request failed with $?"
+
+      # A healthy install is ~2 minutes. The cap turns a wedged postinstall into
+      # a legible failure instead of a 45 minute one.
+      #
+      # post-install.ts ends by running `playwright install ffmpeg` through
+      # spawnSync with captured stdio, so a stalled download blocks forever and
+      # prints nothing at all. It already treats a failed install as non-fatal,
+      # so the download only has to give up rather than succeed — ffmpeg records
+      # video for the Playwright e2e suite, which this workflow never runs.
+      #
+      # PLAYWRIGHT_DOWNLOAD_HOST points at the discard port on loopback, so the
+      # connection is refused immediately. A connection timeout was tried first
+      # and did not help: it caps the socket, which never helps if the stall is
+      # in DNS or in a black-holed connect. Refusal needs no timeout to work.
+      #
+      # Both variables sit inside the quotes so it is obvious which command they
+      # apply to. An earlier revision claimed su discards a job-level `env:`
+      # block; that was wrong — GITHUB_STEP_SUMMARY reaches these commands
+      # perfectly well. The first attempt failed on the timeout's semantics, not
+      # on delivery.
       - name: Install dependencies
-        run: su builder -c 'yarn install --frozen-lockfile'
+        timeout-minutes: 15
+        run: >-
+          su builder -c 'PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:9
+          PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=60000 yarn install
+          --frozen-lockfile'
+
+      # The yauzl bug does not fail loudly: it leaves an Electron directory
+      # holding a single locale file and reports success. Check the extraction
+      # actually completed, rather than meeting it three steps later as a
+      # confusing packaging error. See packaging/arch/PORTED-PATCHES.md entry 6.
+      - name: Verify the Electron download extracted completely
+        run: |
+          locales=$(ls node_modules/electron/dist/locales/*.pak 2>/dev/null | wc -l)
+          echo "electron locales present: $locales"
+          test -x node_modules/electron/dist/electron \
+            || { echo '::error::electron binary missing from node_modules'; exit 1; }
+          test "$locales" -gt 10 \
+            || { echo "::error::electron extracted only $locales locale files; the archive was truncated"; exit 1; }
 
       - name: Lint
         run: su builder -c 'yarn lint'
 
+      # script/test.mjs adds node-test-github-reporter whenever GITHUB_ACTIONS is
+      # set, and that reporter appends to $GITHUB_STEP_SUMMARY. The runner
+      # creates that file as root, so the suite passes and then dies writing its
+      # own summary. Hand the file over rather than dropping the reporter — the
+      # per-test output in the job summary is worth keeping.
       - name: Test
-        run: su builder -c 'yarn test'
+        run: |
+          chmod a+w "$GITHUB_STEP_SUMMARY"
+          su builder -c 'yarn test'
 
       - name: Build
         run: su builder -c 'yarn build:prod'
@@ -55,10 +153,78 @@ jobs:
       - name: Package
         run: su builder -c 'yarn package'
 
+      # Two halves of one fix, each useless alone. The container options above
+      # supply the capability to create namespaces; CAP_SYS_ADMIN lands on the
+      # container's root, not on builder, so unprivileged user namespaces stay
+      # unavailable and Chromium takes the setuid path. Setuid here makes that
+      # path viable: the helper runs as root and root now has the capability.
+      #
+      # Tried separately, each attempt failed on the other's half — setuid alone
+      # reached "cannot create namespace", capabilities alone stayed at "helper
+      # not configured correctly".
+      #
+      # This touches only the throwaway dist/ tree; package() still installs
+      # chrome-sandbox 755, and Arch uses the namespace sandbox, which needs
+      # none of this. The sandbox stays on throughout — this is not
+      # --no-sandbox.
+      #
+      # The pass condition is survival, not output. `--version` was tried and
+      # hung the job for 45 minutes: the app has no such flag, so it opened a
+      # window and kept running, which is the behaviour we wanted all along.
+      # Staying up under a working sandbox is a stronger check than printing a
+      # string anyway — it means the zygote forked, the renderer started and
+      # nothing aborted. timeout exits 124 when it has to stop the app itself,
+      # so 124 is the success case and anything else is an early death.
       - name: Smoke test the packaged binary
+        timeout-minutes: 3
         run: |
-          su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version' \
-            || echo '::warning::packaged binary did not report a version'
+          echo "— can builder create namespaces unaided?"
+          su builder -c 'unshare --user --pid true' \
+            && echo "  yes; the setuid path below is redundant" \
+            || echo "  no; hence the setuid helper"
+
+          chown root:root dist/desktop-linux-x64/chrome-sandbox
+          chmod 4755 dist/desktop-linux-x64/chrome-sandbox
+
+          set +e
+          su builder -c 'timeout -s TERM 25 xvfb-run -a ./dist/desktop-linux-x64/desktop'
+          status=$?
+          set -e
+
+          if [ "$status" -eq 124 ]; then
+            echo 'packaged binary ran for 25s under a working sandbox'
+          else
+            echo "::error::packaged binary exited early with status $status"
+            exit 1
+          fi
+
+      # The dependency list is derived from these NEEDED entries, so an
+      # unresolved one means depends= is missing something. The container has
+      # exactly the depends= array installed and nothing else, which makes this
+      # a real check rather than a formality.
+      - name: Check the runtime dependencies resolve
+        run: |
+          missing=$(ldd dist/desktop-linux-x64/desktop | grep 'not found' || true)
+          if [ -n "$missing" ]; then
+            echo "$missing"
+            echo '::error::depends= does not cover every shared library the binary needs'
+            exit 1
+          fi
+          echo 'every NEEDED entry of the main binary resolves'
+
+      # A branch pin in source= is how the stable branch ended up packaging
+      # unstable code: stable-linux is the merge of unstable-linux, so the line
+      # travelled with the merge and nobody noticed it was now wrong. The
+      # release tag decides what gets built, so the pin has no job to do, and
+      # this runs on every branch and every pull request — the point is to catch
+      # it before a merge, not to repair it afterwards.
+      - name: Reject a branch pin in the PKGBUILD source
+        run: |
+          if grep -nE '^source=.*#(branch|tag)=' packaging/arch/PKGBUILD; then
+            echo '::error file=packaging/arch/PKGBUILD::source= pins a git ref; the newest release tag decides what is built, and a pin goes stale the moment it is merged to another branch'
+            exit 1
+          fi
+          echo 'source= pins no ref'
 
       - name: Check the PKGBUILD
         run: |

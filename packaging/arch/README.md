@@ -51,8 +51,53 @@ build time only — the shipped application is unaffected.
 This is why `makedepends` can name plain `nodejs`: the package builds on current Arch
 without displacing anyone's system Node.
 
-The PKGBUILD clones the branch named in `_gitbranch` at the top of the file. Point it at
-a tag for anything you intend to keep.
+### What version gets built
+
+The PKGBUILD builds the **newest release tag**, not a branch. `prepare()` picks the
+highest tag matching `_tagglob` (`v*-archtop.*`) in version order and checks it out
+detached; `pkgver()` derives the package version from that same tag. Cutting a release is
+therefore just:
+
+```bash
+git tag v3.6.5-beta1-archtop.3
+git push origin v3.6.5-beta1-archtop.3
+```
+
+Nothing in the PKGBUILD needs editing. The static `pkgver=` line only exists so `.SRCINFO`
+is meaningful to anything reading it without running a build — `makepkg` overwrites it.
+
+Selection is repository-wide, so **the branch a tag sits on is irrelevant**: a tag pushed
+to `unstable-linux` is what everyone builds, exactly as one on `stable-linux` would be.
+Tagging is publishing. Prereleases need a tag scheme the glob does not match — not a
+branch.
+
+`source=` pins **no** git ref — no `#branch=`, no `#tag=`. makepkg clones with `--mirror`,
+so every tag in the repository arrives regardless of which ref the clone lands on, and
+`prepare()` then checks out the newest release tag. Whichever branch the clone started on
+is never read.
+
+Tag selection is repository-wide and version-ordered rather than reachability-based, and
+that is deliberate: `archtop.1` and `archtop.2` sit on *different* branches, so
+`git describe` from either one finds only half of them.
+
+The glob excludes upstream's `release-*` tags, which are present in this repository too.
+
+### Why there is no branch pin
+
+There used to be a `_gitbranch` variable, and it read `unstable-linux` on **both**
+branches — including `stable-linux`, which is the merge of `unstable-linux`, so the line
+travelled with the merge and nobody noticed it was now wrong. A PKGBUILD taken from the
+stable branch built unstable code.
+
+The obvious repairs are worse than the disease. Editing the line by hand after each merge
+is the thing that already failed once. A bot rewriting it on `stable-linux` would create a
+commit that exists on stable and not on unstable, so the branches diverge and every
+subsequent pull request conflicts — in that exact line.
+
+Deleting the pin removes the failure instead of managing it: with nothing to keep in step,
+nothing can fall out of step. `.github/workflows/arch-linux.yml` has a guard step that
+fails the build if a pin comes back, and it runs on pull requests too, so it is caught
+before a merge rather than after.
 
 ## Known limitations
 
@@ -72,9 +117,24 @@ re-generating it on every dependency bump. Until that is worth the maintenance c
 
 ### Version scheme
 
-Upstream's current version is `3.6.5-beta1`. pacman forbids `-` inside `pkgver`, so the
-package uses `3.6.5_beta1`. Note that `vercmp 3.6.5_beta1 3.6.5` reports the beta as
-*newer*, so when upstream 3.6.5 final is packaged it will need `epoch=1`.
+Release tags are `v<upstream version>-archtop.<revision>`, e.g.
+`v3.6.5-beta1-archtop.2`: the upstream version being built, then which Archtop packaging
+of it this is. pacman forbids `-` inside `pkgver`, so the dashes become `_` —
+`3.6.5_beta1_archtop.2`.
+
+Ordering was checked with `vercmp`, and holds where it needs to:
+
+| Comparison | Result |
+|---|---|
+| `3.6.5_beta1` → `3.6.5_beta1_archtop.2` | upgrade ✅ |
+| `…archtop.2` → `…archtop.10` | upgrade ✅ (numeric, not lexical) |
+| `3.6.5_beta2_archtop.1` vs `3.6.5_beta1_archtop.9` | beta2 newer ✅ |
+| `3.6.5_beta1_archtop.2` vs `3.6.5_archtop.1` | **beta reported newer ❌** |
+
+The last row is the long-standing prerelease trap, unchanged by the tag scheme: `beta1`
+sorts above nothing at all, so a *final* release compares as older than its own beta. Both
+`vercmp` and `git tag --sort=-v:refname` get it wrong in the same direction, so the tag
+picker inherits it too. When upstream 3.6.5 final is packaged, set `epoch=1`.
 
 ### Icon sizes
 
