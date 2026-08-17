@@ -23,7 +23,7 @@ jobs:
       - name: Install build dependencies
         run: |
           pacman -Syu --noconfirm --needed \
-            nodejs git python yarn xorg-server-xvfb namcap \
+            nodejs npm git python yarn xorg-server-xvfb namcap \
             gtk3 nss alsa-lib libnotify libsecret
 
       - uses: actions/checkout@v7

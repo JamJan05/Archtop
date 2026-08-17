@@ -39,6 +39,10 @@ makedepends=(
   'base-devel'
   'git'
   'nodejs'
+  # npm is only an optdepend of Arch's nodejs, but process-proxy's install
+  # script runs `npm run build:native`, so a clean chroot build fails without
+  # it. Easy to miss locally, where npm is usually already present.
+  'npm'
   'python'
   'yarn'
 )
