@@ -3,3 +3,7 @@
 # might be included when linting
 node_modules
 app/node_modules
+# makepkg working directories (see packaging/arch/.gitignore)
+packaging/arch/src/
+packaging/arch/pkg/
+packaging/arch/github-desktop-archtop/

@@ -60,7 +60,8 @@
     "yarn": ">= 1.9"
   },
   "resolutions": {
-    "@types/react-css-transition-replace/@types/react": "^16.14.62"
+    "@types/react-css-transition-replace/@types/react": "^16.14.62",
+    "yauzl": "^3.4.0"
   },
   "dependencies": {
     "@azure/storage-blob": "^12.25.0",

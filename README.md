@@ -53,10 +53,8 @@ sudo pacman -U ./*.pkg.tar.zst
 github-desktop-archtop
 ```
 
-**Node 24 is required and it is not Arch's `nodejs`.** On Node 26, `extract-zip` stops
-after the first entry of a zip archive without raising, so Electron unpacks to a single
-file and the build "succeeds" with an empty application. `makedepends` therefore names
-`nodejs-lts-krypton`, and `build()` refuses to run on anything newer.
+Building in a clean chroot (`paru -S --chroot`, `aur build --chroot`) keeps the build
+dependencies out of your system entirely, and is the recommended way to do it.
 
 Full build notes, dependency rationale and known limitations:
 [packaging/arch/README.md](packaging/arch/README.md).
