@@ -153,13 +153,29 @@ jobs:
       - name: Package
         run: su builder -c 'yarn package'
 
-      # Runs the tree exactly as the package ships it — chrome-sandbox stays
-      # mode 755, so this exercises the namespace sandbox, which is what Arch
-      # actually uses. The container options above are what make that possible;
-      # granting setuid here instead was tried first and only moved the failure
-      # from "helper not configured" to "cannot create namespace".
+      # Two halves of one fix, each useless alone. The container options above
+      # supply the capability to create namespaces; CAP_SYS_ADMIN lands on the
+      # container's root, not on builder, so unprivileged user namespaces stay
+      # unavailable and Chromium takes the setuid path. Setuid here makes that
+      # path viable: the helper runs as root and root now has the capability.
+      #
+      # Tried separately, each attempt failed on the other's half — setuid alone
+      # reached "cannot create namespace", capabilities alone stayed at "helper
+      # not configured correctly".
+      #
+      # This touches only the throwaway dist/ tree; package() still installs
+      # chrome-sandbox 755, and Arch uses the namespace sandbox, which needs
+      # none of this. The sandbox stays on throughout — this is not
+      # --no-sandbox.
       - name: Smoke test the packaged binary
-        run:
+        run: |
+          echo "— can builder create namespaces unaided?"
+          su builder -c 'unshare --user --pid true' \
+            && echo "  yes; the setuid path below is redundant" \
+            || echo "  no; hence the setuid helper"
+
+          chown root:root dist/desktop-linux-x64/chrome-sandbox
+          chmod 4755 dist/desktop-linux-x64/chrome-sandbox
           su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version'
 
       # The dependency list is derived from these NEEDED entries, so an
