@@ -94,9 +94,11 @@ jobs:
       # and did not help: it caps the socket, which never helps if the stall is
       # in DNS or in a black-holed connect. Refusal needs no timeout to work.
       #
-      # Both variables sit inside the quotes because su clears the environment —
-      # that is what its --preserve-environment flag exists to switch off. A
-      # job-level `env:` block is silently inert for every step here.
+      # Both variables sit inside the quotes so it is obvious which command they
+      # apply to. An earlier revision claimed su discards a job-level `env:`
+      # block; that was wrong — GITHUB_STEP_SUMMARY reaches these commands
+      # perfectly well. The first attempt failed on the timeout's semantics, not
+      # on delivery.
       - name: Install dependencies
         timeout-minutes: 15
         run: >-
@@ -120,8 +122,15 @@ jobs:
       - name: Lint
         run: su builder -c 'yarn lint'
 
+      # script/test.mjs adds node-test-github-reporter whenever GITHUB_ACTIONS is
+      # set, and that reporter appends to $GITHUB_STEP_SUMMARY. The runner
+      # creates that file as root, so the suite passes and then dies writing its
+      # own summary. Hand the file over rather than dropping the reporter — the
+      # per-test output in the job summary is worth keeping.
       - name: Test
-        run: su builder -c 'yarn test'
+        run: |
+          chmod a+w "$GITHUB_STEP_SUMMARY"
+          su builder -c 'yarn test'
 
       - name: Build
         run: su builder -c 'yarn build:prod'
