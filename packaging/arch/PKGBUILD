@@ -20,7 +20,7 @@ pkgname=github-desktop-archtop
 # it without running a build; pkgver() overwrites it at build time. pacman does
 # not allow '-' inside pkgver, so the tag's dashes become '_'. See README.md
 # for the epoch caveat when 3.6.5 final is packaged.
-pkgver=3.6.5_beta1_archtop.2
+pkgver=3.6.5_beta1_archtop.3
 pkgrel=1
 pkgdesc='GitHub Desktop packaged natively for Arch Linux'
 arch=('x86_64')
