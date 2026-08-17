@@ -25,7 +25,22 @@ jobs:
   build:
     name: Build and package
     runs-on: ubuntu-latest
-    container: archlinux:base-devel
+    container:
+      image: archlinux:base-devel
+      # Chromium's sandbox has to create user, PID and network namespaces.
+      # Docker's default seccomp profile denies clone(CLONE_NEWUSER) and the
+      # default AppArmor profile denies namespace creation outright, so the
+      # sandbox cannot initialise and the packaged binary aborts before it
+      # prints anything — on a real Arch system it starts fine, because
+      # unprivileged user namespaces are enabled there.
+      #
+      # This grants the *container* what an ordinary desktop already allows. It
+      # is the opposite of --no-sandbox: the application's own sandbox stays on
+      # and gets exercised exactly as the package ships it. SYS_ADMIN covers the
+      # setuid helper's path too, in case the namespace path is unavailable.
+      options: >-
+        --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+        --cap-add SYS_ADMIN
     # This build has a hang-shaped failure mode: the postinstall chain sits on
     # `playwright install ffmpeg`, whose output post-install.ts captures rather
     # than inherits, so a wedged run prints nothing at all. Unbounded, the job
@@ -138,17 +153,13 @@ jobs:
       - name: Package
         run: su builder -c 'yarn package'
 
-      # Unprivileged user namespaces are unavailable inside the container, so
-      # Chromium falls back to the setuid sandbox — and aborts, because the
-      # packaged chrome-sandbox is mode 755 by design. Granting setuid *here*
-      # only affects this throwaway dist/ tree, never the package: package()
-      # still installs it 755, and on a real Arch system the namespace sandbox
-      # is used instead. This is the supported way to run out of a build
-      # directory, and it is not --no-sandbox — the sandbox stays on.
+      # Runs the tree exactly as the package ships it — chrome-sandbox stays
+      # mode 755, so this exercises the namespace sandbox, which is what Arch
+      # actually uses. The container options above are what make that possible;
+      # granting setuid here instead was tried first and only moved the failure
+      # from "helper not configured" to "cannot create namespace".
       - name: Smoke test the packaged binary
-        run: |
-          chown root:root dist/desktop-linux-x64/chrome-sandbox
-          chmod 4755 dist/desktop-linux-x64/chrome-sandbox
+        run:
           su builder -c 'xvfb-run -a ./dist/desktop-linux-x64/desktop --version'
 
       # The dependency list is derived from these NEEDED entries, so an
