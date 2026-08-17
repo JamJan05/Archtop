@@ -31,13 +31,6 @@ jobs:
     # than inherits, so a wedged run prints nothing at all. Unbounded, the job
     # would burn the six hour default before anyone noticed.
     timeout-minutes: 45
-    env:
-      # The timeouts above bound that hang; this removes it. post-install.ts
-      # already treats a failed ffmpeg install as non-fatal — it logs and moves
-      # on — so all that is missing is for the download to give up instead of
-      # waiting forever. ffmpeg only records video for the Playwright e2e suite,
-      # which this workflow never runs.
-      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 60000
     steps:
       - name: Install build dependencies
         run: |
@@ -77,9 +70,21 @@ jobs:
       # A healthy install is ~2 minutes. This cap is generous enough to absorb a
       # cold cache and a slow network, and still turns the postinstall hang into
       # a fast, legible failure rather than a 45 minute one.
+      # PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT is set inside the quotes, not in a
+      # job-level `env:` block, because `su` clears the environment — that is
+      # what its --preserve-environment flag exists to switch off. Anything this
+      # workflow exports outside these quotes never reaches the command.
+      #
+      # post-install.ts ends by running `playwright install ffmpeg` through
+      # spawnSync with captured stdio, so a stalled download blocks forever and
+      # prints nothing. It already treats a failed install as non-fatal, so the
+      # only thing missing is for the download to give up. ffmpeg records video
+      # for the Playwright e2e suite, which this workflow never runs.
       - name: Install dependencies
         timeout-minutes: 15
-        run: su builder -c 'yarn install --frozen-lockfile'
+        run: >-
+          su builder -c 'PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT=60000 yarn
+          install --frozen-lockfile'
 
       # The yauzl bug does not fail loudly: it leaves an Electron directory
       # holding a single locale file and reports success. Check the extraction
