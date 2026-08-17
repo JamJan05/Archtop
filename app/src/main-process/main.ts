@@ -235,10 +235,46 @@ if (__DARWIN__) {
   })
 }
 
+/**
+ * Find the first argument that is one of the protocols we've registered for.
+ *
+ * Chromium is free to inject its own switches into the argument list, so rather
+ * than relying on a fixed position we look for anything that both starts with a
+ * scheme we own and parses as a URL.
+ */
+function findAppURLInArguments(argv: ReadonlyArray<string>) {
+  const prefixes = Array.from(possibleProtocols, p => `${p}://`)
+
+  return argv.find(arg => {
+    if (prefixes.some(p => arg.startsWith(p))) {
+      try {
+        new URL(arg)
+        return true
+      } catch (e) {
+        log.error(`Unable to parse argument as URL: ${arg}`)
+      }
+    }
+    return false
+  })
+}
+
 async function handleCommandLineArguments(argv: string[]) {
   const args = parseCommandLineArgs(argv, {
     boolean: ['protocol-launcher'],
   })
+
+  // On Linux the desktop entry hands us the URL as a bare argument (its Exec
+  // line ends in %U), so there's no switch to key off the way there is on
+  // Windows, and `open-url` below is macOS-only. Without this the callback that
+  // completes an OAuth sign-in reaches the process and is silently dropped.
+  if (__LINUX__) {
+    const matchingUrl = findAppURLInArguments(argv)
+
+    if (matchingUrl !== undefined) {
+      handleAppURL(matchingUrl)
+      return
+    }
+  }
 
   // Desktop registers it's protocol handler callback on Windows as
   // `[executable path] --protocol-launcher "%1"`. Note that extra command
@@ -256,18 +292,7 @@ async function handleCommandLineArguments(argv: string[]) {
     // sure that Chromium won't add more switches later on which is why we have
     // to resort to looking through all arguments looking for something that
     // appears to be an app url.
-    const prefixes = Array.from(possibleProtocols, p => `${p}://`)
-    const matchingUrl = argv.find(arg => {
-      if (prefixes.some(p => arg.startsWith(p))) {
-        try {
-          new URL(arg)
-          return true
-        } catch (e) {
-          log.error(`Unable to parse argument as URL: ${arg}`)
-        }
-      }
-      return false
-    })
+    const matchingUrl = findAppURLInArguments(argv)
 
     if (matchingUrl) {
       handleAppURL(matchingUrl)

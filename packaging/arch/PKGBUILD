@@ -110,6 +110,15 @@ package() {
   install -dm755 "$pkgdir/opt/$pkgname"
   cp -a "$_dist/." "$pkgdir/opt/$pkgname/"
 
+  # @electron/packager emits its output directory as 0700, and `cp -a` faithfully
+  # carries that over — including onto the destination directory itself, which is
+  # why the install -dm755 above is not enough. Left alone, /opt/<pkg> ends up
+  # root-owned and unreadable, so the application installs cleanly and then
+  # refuses to start for every non-root user. Capital X keeps the executable bit
+  # on directories and on binaries that already had it, without granting it to
+  # data files.
+  chmod -R u=rwX,go=rX "$pkgdir/opt/$pkgname"
+
   install -Dm755 "packaging/arch/$pkgname.sh" "$pkgdir/usr/bin/$pkgname"
 
   install -Dm644 "packaging/arch/$pkgname.desktop" \

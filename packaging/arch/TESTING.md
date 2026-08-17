@@ -33,6 +33,15 @@ Commit:
 
 ## 2. Launching
 
+**Run every check in this section as an unprivileged user.** The build output arrives as
+mode 0700, so a packaging mistake here yields a package that installs without a single
+warning and then refuses to start for everyone except root. Testing as root hides it
+completely.
+
+- [ ] `namei -l /opt/github-desktop-archtop/desktop` — every component traversable by your user
+- [ ] `pacman -U` reports no `Różne uprawnienia dla katalogu` / `directory permissions differ`
+      warning (pacman leaves the modes of pre-existing directories alone, so a bad install
+      has to be undone by hand)
 - [ ] starts from a terminal: `github-desktop-archtop`
 - [ ] starts from the application menu
 - [ ] the menu entry reads **GitHub Desktop (Archtop)** and shows the correct icon
