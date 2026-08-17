@@ -84,6 +84,24 @@ under `/opt`.
 Changes flow one way only: `desktop/desktop` → `development` → `unstable-linux` →
 `stable-linux`.
 
+### Releases
+
+A release is a **tag**, not a branch state: `v<upstream version>-archtop.<revision>`, for
+example `v3.6.5-beta1-archtop.2`. The PKGBUILD builds the newest such tag in the
+repository and derives its version from it, so publishing a release is `git tag` plus
+`git push origin <tag>` — no file is edited.
+
+Which branch the tag sits on makes no difference. Tag selection is repository-wide,
+because `archtop.1` and `archtop.2` are on different branches and any branch-based lookup
+finds only one of them. The rule that follows is short:
+
+> **Tagging is publishing.** Commit to `unstable-linux` as freely as you like — nothing
+> reaches anyone until a tag is pushed. A tag on `unstable-linux` is just as live as one
+> on `stable-linux`.
+
+Prereleases therefore need a scheme that the glob does not match, not a branch. There is
+no such scheme yet; until there is, only tag what you want people to build.
+
 ## Testing
 
 [packaging/arch/TESTING.md](packaging/arch/TESTING.md) is the checklist to work through on

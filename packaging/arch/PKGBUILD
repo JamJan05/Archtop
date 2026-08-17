@@ -6,15 +6,21 @@
 # deviation from desktop/desktop is a thin platform layer that lets the build
 # scripts target Linux; see ../../packaging/arch/PORTED-PATCHES.md.
 
-# Branch or tag of the fork to build from. Point this at a tag once releases
-# are cut; a branch name is only appropriate for development builds.
-_gitbranch=unstable-linux
+# Release tags of this fork look like v3.6.5-beta1-archtop.2: the upstream
+# version being built, then the Archtop revision of it. prepare() builds the
+# newest tag matching this glob and pkgver() derives the version from it, so
+# cutting a release means pushing a tag — nothing in this file gets edited.
+#
+# The glob deliberately excludes upstream's own release-* tags, which are on
+# this repository too and would otherwise be picked up.
+_tagglob='v*-archtop.*'
 
 pkgname=github-desktop-archtop
-# Upstream version is 3.6.5-beta1; pacman does not allow '-' inside pkgver, so
-# the prerelease suffix is joined with '_'. See README.md for the epoch caveat
-# when 3.6.5 final is packaged.
-pkgver=3.6.5_beta1
+# Kept in step with the newest tag so .SRCINFO is honest for anything reading
+# it without running a build; pkgver() overwrites it at build time. pacman does
+# not allow '-' inside pkgver, so the tag's dashes become '_'. See README.md
+# for the epoch caveat when 3.6.5 final is packaged.
+pkgver=3.6.5_beta1_archtop.2
 pkgrel=1
 pkgdesc='GitHub Desktop packaged natively for Arch Linux'
 arch=('x86_64')
@@ -35,9 +41,11 @@ depends=(
   'libsecret'
   'nss'
 )
+# git is deliberately absent here: it is already a runtime dependency above, and
+# namcap flags the duplication. makepkg still gets it, because depends are
+# installed for the build too.
 makedepends=(
   'base-devel'
-  'git'
   'nodejs'
   # npm is only an optdepend of Arch's nodejs, but process-proxy's install
   # script runs `npm run build:native`, so a clean chroot build fails without
@@ -58,8 +66,53 @@ optdepends=(
 # snapshots and the debug package would only contain upstream-provided symbols.
 options=('!strip' '!debug')
 install="$pkgname.install"
-source=("$pkgname::git+$url.git#branch=$_gitbranch")
+# No #branch= or #tag= fragment on purpose. makepkg clones with --mirror, so
+# every ref arrives regardless, and prepare() then checks out the newest release
+# tag — which branch the clone happens to land on is never read.
+#
+# A branch pin here used to say unstable-linux on *both* branches: stable-linux
+# is the merge of unstable-linux, so the line came across with everything else
+# and a PKGBUILD taken from the stable branch quietly built unstable code.
+# Keeping the two in step by hand, or by a bot committing onto stable, only
+# manages that failure; having nothing to keep in step removes it. The guard in
+# .github/workflows/arch-linux.yml fails the build if a pin comes back.
+source=("$pkgname::git+$url.git")
 sha256sums=('SKIP')
+
+# Newest release tag in the clone, by version order rather than by creation
+# date or by reachability from any branch. Version order is what matters: a tag
+# pushed late for an older release must not outrank a newer one.
+_newest_tag() {
+  git tag --list "$_tagglob" --sort=-v:refname | head -1
+}
+
+prepare() {
+  cd "$pkgname"
+
+  local _tag
+  _tag=$(_newest_tag)
+
+  if [[ -z $_tag ]]; then
+    echo "no tag matching $_tagglob in $url" >&2
+    echo "cut a release tag before packaging; see packaging/arch/README.md" >&2
+    return 1
+  fi
+
+  msg2 "building from $_tag"
+
+  # Detached on purpose: the checkout tracks a release, not a branch, and a
+  # rebuild must produce the same tree rather than whatever has landed since.
+  git checkout -q --detach "$_tag"
+}
+
+pkgver() {
+  cd "$pkgname"
+
+  # v3.6.5-beta1-archtop.2 -> 3.6.5_beta1_archtop.2. pacman forbids '-' inside
+  # pkgver; '_' preserves the ordering here because the archtop revision is the
+  # last component of every tag, so vercmp compares that first where it counts.
+  _newest_tag | sed 's/^v//; s/-/_/g'
+}
 
 build() {
   cd "$pkgname"
@@ -86,6 +139,10 @@ build() {
 package() {
   cd "$pkgname"
 
+  # @electron/packager names its output directory after the Node architecture,
+  # which is not what CARCH is called. namcap warns that x86_64 below "should be
+  # changed to $CARCH"; it cannot tell a case label apart from a hardcoded
+  # value. These are the values being matched, so the literals are correct.
   local _distarch
   case "$CARCH" in
     x86_64) _distarch=x64 ;;
