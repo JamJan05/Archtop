@@ -14,11 +14,30 @@ on:
       - stable-linux
   workflow_dispatch:
 
+# A second push to the same branch makes the run in flight pointless. Without
+# this they queue behind each other, and this job is long enough that the queue
+# becomes the bottleneck.
+concurrency:
+  group: arch-linux-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   build:
     name: Build and package
     runs-on: ubuntu-latest
     container: archlinux:base-devel
+    # This build has a hang-shaped failure mode: the postinstall chain sits on
+    # `playwright install ffmpeg`, whose output post-install.ts captures rather
+    # than inherits, so a wedged run prints nothing at all. Unbounded, the job
+    # would burn the six hour default before anyone noticed.
+    timeout-minutes: 45
+    env:
+      # The timeouts above bound that hang; this removes it. post-install.ts
+      # already treats a failed ffmpeg install as non-fatal — it logs and moves
+      # on — so all that is missing is for the download to give up instead of
+      # waiting forever. ffmpeg only records video for the Playwright e2e suite,
+      # which this workflow never runs.
+      PLAYWRIGHT_DOWNLOAD_CONNECTION_TIMEOUT: 60000
     steps:
       - name: Install build dependencies
         run: |
@@ -26,18 +45,54 @@ jobs:
             nodejs npm git python yarn xorg-server-xvfb namcap \
             gtk3 nss alsa-lib libnotify libsecret
 
+      # makepkg refuses to run as root, and the container's default user is
+      # root. Created before the cache is restored so that the tree and the
+      # cache can be handed over in a single chown.
+      - name: Create build user
+        run: useradd -m builder
+
       - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      # makepkg refuses to run as root, and the container's default user is root.
-      - name: Create build user
-        run: |
-          useradd -m builder
-          chown -R builder:builder "$GITHUB_WORKSPACE"
+      # Downloads only: package tarballs, the Electron binary, node-gyp headers.
+      # Deliberately *not* node_modules — a healthy install here runs about two
+      # minutes end to end, of which native compilation is well under a minute,
+      # so caching the compiled tree buys little and risks restoring modules
+      # built against an ABI the container's rolling nodejs no longer has.
+      - name: Restore download caches
+        uses: actions/cache@v4
+        with:
+          path: |
+            /home/builder/.cache
+            /home/builder/.node-gyp
+            /home/builder/.electron-gyp
+          key: archtop-dl-${{ hashFiles('yarn.lock', 'app/yarn.lock') }}
+          restore-keys: |
+            archtop-dl-
 
+      - name: Hand the tree and the cache to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE" /home/builder
+
+      # A healthy install is ~2 minutes. This cap is generous enough to absorb a
+      # cold cache and a slow network, and still turns the postinstall hang into
+      # a fast, legible failure rather than a 45 minute one.
       - name: Install dependencies
+        timeout-minutes: 15
         run: su builder -c 'yarn install --frozen-lockfile'
+
+      # The yauzl bug does not fail loudly: it leaves an Electron directory
+      # holding a single locale file and reports success. Check the extraction
+      # actually completed, rather than meeting it three steps later as a
+      # confusing packaging error. See packaging/arch/PORTED-PATCHES.md entry 6.
+      - name: Verify the Electron download extracted completely
+        run: |
+          locales=$(ls node_modules/electron/dist/locales/*.pak 2>/dev/null | wc -l)
+          echo "electron locales present: $locales"
+          test -x node_modules/electron/dist/electron \
+            || { echo '::error::electron binary missing from node_modules'; exit 1; }
+          test "$locales" -gt 10 \
+            || { echo "::error::electron extracted only $locales locale files; the archive was truncated"; exit 1; }
 
       - name: Lint
         run: su builder -c 'yarn lint'
