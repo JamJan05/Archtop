@@ -45,6 +45,29 @@ application's own name, bundle ID and company name are left exactly as upstream 
 
 ## Installing
 
+### From a release — no compiling
+
+Every release tag publishes a built `.pkg.tar.zst`, so installing takes seconds rather
+than the quarter of an hour a source build needs:
+
+```bash
+# grab the newest release and its checksum file
+gh release download --pattern '*.pkg.tar.zst' --pattern 'SHA256SUMS'
+
+sha256sum -c SHA256SUMS
+sudo pacman -U ./github-desktop-archtop-*.pkg.tar.zst
+```
+
+Without `gh`, take the same two files from the
+[releases page](https://github.com/JamJan05/Archtop/releases).
+
+**Check the checksum.** These packages are built by
+[the release workflow](.github/workflows/release.yml), which runs `makepkg`, installs the
+result and launches it under a sandbox before publishing anything — but a checksum is what
+lets you confirm the file you downloaded is the file that was built.
+
+### From source
+
 ```bash
 git clone https://github.com/JamJan05/Archtop.git
 cd Archtop/packaging/arch

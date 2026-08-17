@@ -1,0 +1,157 @@
+name: Release
+
+# Publishes the pacman package for a release tag, so that installing Archtop is
+# `pacman -U` rather than a quarter of an hour of compiling.
+#
+# Separate from arch-linux.yml on purpose: that workflow proves a *branch*
+# builds, running yarn directly and never touching the PKGBUILD's own
+# build()/package(). This one runs makepkg, so the packaging layer is exercised
+# for the first time, and what gets published is what makepkg produced rather
+# than something assembled beside it.
+
+on:
+  push:
+    tags:
+      - 'v*-archtop.*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Release tag to build and publish'
+        required: true
+
+# gh release create writes to the repository.
+permissions:
+  contents: write
+
+jobs:
+  package:
+    name: Build and publish the pacman package
+    runs-on: ubuntu-latest
+    container:
+      image: archlinux:base-devel
+      # Same reasoning as arch-linux.yml: Chromium's sandbox needs to create
+      # namespaces, and Docker's defaults forbid it. Needed here because the
+      # published package is smoke tested before anyone can download it.
+      options: >-
+        --security-opt seccomp=unconfined --security-opt apparmor=unconfined
+        --cap-add SYS_ADMIN
+    timeout-minutes: 60
+    steps:
+      - name: Install build dependencies
+        run: |
+          pacman -Syu --noconfirm --needed \
+            nodejs npm git python yarn xorg-server-xvfb namcap github-cli \
+            gtk3 nss alsa-lib libnotify libsecret
+
+      # makepkg refuses to run as root.
+      - name: Create build user
+        run: useradd -m builder
+
+      - uses: actions/checkout@v7
+
+      - name: Hand the tree to the build user
+        run: chown -R builder:builder "$GITHUB_WORKSPACE"
+
+      # makepkg does everything: clones the repository at the newest release
+      # tag, runs yarn install and build:prod through the PKGBUILD's own
+      # build(), and lays the package out through package(). --nodeps because
+      # the dependencies were installed above; makepkg cannot install them
+      # itself without root.
+      #
+      # PLAYWRIGHT_DOWNLOAD_HOST points at the discard port so the postinstall's
+      # ffmpeg download is refused immediately instead of stalling; the e2e
+      # suite that needs it never runs here. See arch-linux.yml for the full
+      # account.
+      - name: Build the package with makepkg
+        timeout-minutes: 45
+        working-directory: packaging/arch
+        run: >-
+          su builder -c 'PLAYWRIGHT_DOWNLOAD_HOST=http://127.0.0.1:9 makepkg
+          --noconfirm --nodeps'
+
+      # The PKGBUILD picks the newest release tag in the repository, which is
+      # normally the tag that triggered this run — but not if an older tag is
+      # pushed afterwards. Publishing a package whose version disagrees with the
+      # release it hangs under would be worse than failing here.
+      - name: Check the package matches the tag
+        working-directory: packaging/arch
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+          expected="${tag#v}"
+          expected="${expected//-/_}"
+          pkg=$(ls ./*.pkg.tar.zst)
+          echo "tag:     $tag"
+          echo "expects: $expected"
+          echo "built:   $pkg"
+          case "$pkg" in
+            *"$expected"*) echo 'version matches' ;;
+            *) echo "::error::built $pkg, which is not $expected"; exit 1 ;;
+          esac
+
+      # First time namcap sees a built package rather than the recipe. Reported,
+      # not enforced: its package-level checks have never been read here, and a
+      # first run is for learning what it says, not for blocking a release on an
+      # unreviewed opinion.
+      - name: namcap the built package
+        continue-on-error: true
+        working-directory: packaging/arch
+        run: namcap ./*.pkg.tar.zst
+
+      - name: Install it the way a user would
+        working-directory: packaging/arch
+        run: pacman -U --noconfirm ./*.pkg.tar.zst
+
+      # Publishing a binary means asking people to trust it, so it does not go
+      # out untried. Survival is the pass condition — the app has no --version
+      # flag, it opens a window and keeps running, so timeout stopping it (124)
+      # is success and anything else is an early death.
+      #
+      # chrome-sandbox is granted setuid here only because the container denies
+      # unprivileged namespaces to a non-root user; the package installs it 755
+      # and Arch uses the namespace sandbox. The sandbox stays on either way —
+      # this is not --no-sandbox.
+      - name: Smoke test the installed package
+        timeout-minutes: 3
+        run: |
+          chmod 4755 /opt/github-desktop-archtop/chrome-sandbox
+
+          set +e
+          su builder -c 'timeout -s TERM 25 xvfb-run -a github-desktop-archtop'
+          status=$?
+          set -e
+
+          if [ "$status" -eq 124 ]; then
+            echo 'the installed package ran for 25s under a working sandbox'
+          else
+            echo "::error::the installed package exited early with status $status"
+            exit 1
+          fi
+
+      # AUR -bin packages verify sha256sums, so a published checksum is what
+      # makes a github-desktop-archtop-bin possible at all. It is also the least
+      # anyone should get alongside a binary they did not build.
+      - name: Checksums
+        working-directory: packaging/arch
+        run: |
+          sha256sum ./*.pkg.tar.zst | sed 's|\./||' > SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Publish the release
+        working-directory: packaging/arch
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          tag="${{ github.event.inputs.tag || github.ref_name }}"
+
+          # The tag carries an annotation written when the release was cut, so
+          # the notes come from there rather than being invented here.
+          gh release create "$tag" \
+            --title "$tag" \
+            --notes-from-tag \
+            --verify-tag \
+            ./*.pkg.tar.zst SHA256SUMS \
+          || gh release upload "$tag" --clobber ./*.pkg.tar.zst SHA256SUMS
+
+          echo "published:"
+          gh release view "$tag" --json assets --jq '.assets[] | "  \(.name)  \(.size) bytes"'
