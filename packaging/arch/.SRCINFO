@@ -1,6 +1,6 @@
 pkgbase = github-desktop-archtop
 	pkgdesc = GitHub Desktop packaged natively for Arch Linux
-	pkgver = 3.6.5_beta1_archtop.2
+	pkgver = 3.6.5_beta1_archtop.3
 	pkgrel = 1
 	url = https://github.com/JamJan05/Archtop
 	install = github-desktop-archtop.install
